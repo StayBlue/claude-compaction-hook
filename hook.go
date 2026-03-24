@@ -66,16 +66,6 @@ func readHookInput() (*hookInput, error) {
 	return &input, nil
 }
 
-// debugLog appends a timestamped line to /tmp/compact-hook/debug.log.
-func debugLog(format string, args ...any) {
-	f, err := os.OpenFile("/tmp/compact-hook/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	fmt.Fprintf(f, format+"\n", args...)
-}
-
 // hookPreCompact handles the PreCompact hook.
 // The compactor command is passed as os.Args[3:] (after "hook pre-compact").
 func hookPreCompact() error {
@@ -88,7 +78,6 @@ func hookPreCompact() error {
 	if err != nil {
 		return err
 	}
-	debugLog("pre-compact: session_id=%s transcript=%s", input.SessionID, input.TranscriptPath)
 
 	if input.SessionID == "" {
 		return fmt.Errorf("no session_id in hook input")
@@ -107,7 +96,6 @@ func hookPreCompact() error {
 	if err != nil {
 		return fmt.Errorf("failed to format transcript: %w", err)
 	}
-	debugLog("pre-compact: transcript_bytes=%d", len(formatted))
 
 	// Run the compactor with plaintext on stdin and JSONL path as $1
 	cmdStr := compactor + " " + shellQuote(input.TranscriptPath)
@@ -117,13 +105,9 @@ func hookPreCompact() error {
 	cmd.Stderr = &stderrBuf
 
 	output, err := cmd.Output()
-	if stderrBuf.Len() > 0 {
-		debugLog("pre-compact: compactor stderr: %s", stderrBuf.String())
-	}
 	if err != nil {
 		return fmt.Errorf("compactor failed: %w", err)
 	}
-	debugLog("pre-compact: compactor output_bytes=%d", len(output))
 
 	// Save output for session-start to pick up
 	sf, err := stateFile(input.SessionID)
@@ -157,17 +141,14 @@ func hookSessionStart() error {
 	if err != nil {
 		return err
 	}
-	debugLog("session-start: session_id=%s state_file=%s", input.SessionID, sf)
 
 	data, err := os.ReadFile(sf)
 	if err != nil {
 		if os.IsNotExist(err) {
-			debugLog("session-start: no state file found")
 			return nil
 		}
 		return fmt.Errorf("failed to read state file: %w", err)
 	}
-	debugLog("session-start: injecting %d bytes", len(data))
 
 	// Return as JSON with additionalContext field
 	output := map[string]any{
